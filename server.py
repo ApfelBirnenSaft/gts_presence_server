@@ -8,11 +8,17 @@ from api.v1.main import router as api_v1_router
 from api.v2.main import router as api_v2_router
 import os
 
+from api.database import create_db_and_tables
+
 app = FastAPI()
 
 # API-Routen mounten
 app.include_router(api_v1_router, prefix="/api/v1")
 app.include_router(api_v2_router, prefix="/api/v2")
+
+@app.on_event("startup")
+def on_startup():
+    create_db_and_tables()
 
 flutter_build_dir = "WebApp"
 
