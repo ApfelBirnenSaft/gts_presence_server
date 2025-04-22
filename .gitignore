@@ -1,1 +1,6 @@
 GTS_bla.zip
+api/v1/__pycache__
+api/v2/__pycache__
+api/models/__pycache__
+api/__pycache__
+session.db
