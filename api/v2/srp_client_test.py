@@ -4,11 +4,11 @@ import websockets
 import json
 import requests
 from srptools import SRPClientSession, SRPContext, constants
-from hashlib import sha1
+from hashlib import sha256
 import hmac, time
 
 def calc_hmac(data: bytes, key: bytes) -> str:
-    h = hmac.new(key, data, sha1)
+    h = hmac.new(key, data, sha256)
     return h.hexdigest()
 
 ENCODING = "UTF-8"
@@ -60,23 +60,24 @@ async def srp_auth():
             server_session_key_proof_hash = data.pop("server_session_key_proof_hash")
             if client_session.verify_proof(server_session_key_proof_hash.encode()):
                 print("✅ Authentifizierung erfolgreich")
-                session_id = str(data["session_id"])
                 key = client_session.key
+                jwt_id_token = data["jwt_id_token"]
                 if isinstance(key, bytes): key = key.decode()
                 url = "http://localhost:8000/api/v2/secure"
                 challange = data["challange"]
-                print(session_id)
+                print(data)
+                print()
+                print("jwt_id_token", jwt_id_token)
                 print("key", key)
-                print("challenga", challange)
+                print("challenge", challange)
                 return
                 for i in range(2):
-                    hmac_value = calc_hmac(bytes.fromhex(challange), key)
+                    hmac_value = calc_hmac(bytes.fromhex(challange), cast(str, key).encode())
                     headers = {
-                        "Auth-Challange": hmac_value,
-                        "Auth-Username": "ASt",
-                        "Auth-Session-id": session_id,
+                        "Auth-Challenge": hmac_value,
+                        "Auth-Id-Token": jwt_id_token,
                     }
-                    response = requests.request("GET", url, json={}, headers=headers)
+                    response = requests.request("POST", url, json={}, headers=headers)
                     print(response.status_code, response.content)
                     challange = response.headers["X-Challenge"]
             else:

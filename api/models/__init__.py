@@ -1,9 +1,11 @@
-import sqlalchemy
+def db_column_name(c):
+    return f"{c.parent.class_.__tablename__}.{c.name}"
 
-def create_audit(mapper, connection:sqlalchemy.engine.base.Connection, target):
-    print(type(mapper), mapper)
-    print(type(connection), connection)
-    print(type(target), target)
+#from .dataChange import *
 
-from .Employee import *
-sqlalchemy.event.listen(Employee, "after_insert", create_audit)
+from .student import *
+from .employee import *
+from .activity import *
+from .session import *
+
+#sqlalchemy.event.listen(Employee, "after_insert", create_audit)

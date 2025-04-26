@@ -9,9 +9,7 @@ class Employee(SQLModel, table=True):
     username: str = Field(nullable=False, primary_key=True, max_length=64)
 
 def db_column_name(c):
-    print(dir(Employee.username))
-    print(Employee.username)
-    return f"{c.parent.class_.__tablename__}.{c}"
+    return f"{c.parent.class_.__tablename__}.{c.name}"
 
 print(db_column_name(Employee.username))
 """import hmac

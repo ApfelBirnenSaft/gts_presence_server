@@ -4,32 +4,49 @@ import os
 import random
 import secrets
 import time
-from typing import Callable, cast
-from fastapi import APIRouter, HTTPException, Depends, Request, Response, WebSocket, WebSocketDisconnect
+from typing import Callable, cast, Optional
+from fastapi import APIRouter, HTTPException, Depends, Request, Response, status
 from fastapi.responses import JSONResponse
 import sqlalchemy
 from sqlmodel import Session, select
 from pydantic import BaseModel
 import datetime
 import hmac
+import jwt
 import hashlib
 from srptools import SRPServerSession, SRPContext, constants, utils, hex_from_b64
 from sqlalchemy.ext.asyncio import AsyncSession
+import json
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.backends import default_backend
 
 from ..models import *
-from ..database import get_session, engine, async_session
-from ..session_db import AuthSession
+from ..database import get_session, engine, async_session, versioning
+from ..models.session import AuthSession
+from utils import get_datetime_utc
 
-from .websocket import router as ws_router, emit, start_up as ws_startup
+from .websocket import router as ws_router, emit, start_up as ws_startup, JWT_SECRET_KEY, JWT_ALG
+
+SESSION_DURATION = datetime.timedelta(hours=1)
 
 PRIME = constants.PRIME_2048
 GEN = constants.PRIME_2048_GEN
+
+def decode_token(token: str) -> dict:
+    try:
+        decoded = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALG])
+        return decoded
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token abgelaufen")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Ungültiges Token")
 
 def start_up():
     ws_startup()
 
 def calc_hmac(data: bytes, key: bytes) -> str:
-    h = hmac.new(key, data, hashlib.sha1)
+    h = hmac.new(key, data, hashlib.sha256)
     return h.hexdigest()
 
 def verify_hmac(data: bytes, key: bytes, expected_hmac: str) -> bool:
@@ -41,40 +58,44 @@ router.include_router(ws_router, prefix="/ws")
 def verify(sec_lvl: int):
     def decorator(func: Callable):
         @wraps(func)
-        async def wrapper(*args, request: Request, **kwargs):
+        async def wrapper(*args, **kwargs):
             async with async_session() as session:
+                request: Request = kwargs["request"]
                 remote_challange = request.headers["Auth-Challenge"]
-                auth_session_id = int(request.headers["Auth-Session-Id"])
-                auth_session = await session.get(AuthSession, auth_session_id)
+                auth_id_token = request.headers["Auth-Id-Token"]
+
+                auth_id = decode_token(auth_id_token)
+
+                auth_session = await session.get(AuthSession, auth_id["session_id"])
 
                 if not auth_session:
-                    return HTTPException(status_code=404, detail="auth: auth session not found")
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="auth: auth session not found")
 
-                employee_username = request.headers["Auth-Username"]
-                if employee_username != auth_session.username:
+                if auth_id["user_id"] != auth_session.user_id:
                     await session.delete(auth_session)
                     await session.commit()
-                    raise HTTPException(status_code=404, detail="auth: employee id mismatch, session deleted")
+                    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="auth: employee id mismatch, session deleted")
                 
-                employee = await session.get(Employee, employee_username)
+                employee = await session.get(Employee, auth_id["user_id"])
                 if not employee:
                     await session.delete(auth_session)
                     await session.commit()
-                    raise HTTPException(status_code=404, detail="auth: employee not found, session deleted")
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="auth: employee not found, session deleted")
                 
                 authed = verify_hmac(bytes.fromhex(auth_session.challange), auth_session.key.encode(), remote_challange)
                 if not authed:
                     await session.delete(auth_session)
                     await session.commit()
-                    return JSONResponse(status_code=401, content={"detail": "auth: Unauthorized, session deleted"})
+                    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="auth: verification failed")
 
                 if employee.sec_lvl < sec_lvl:
                     auth_session.challange = generate_challenge()
                     await session.commit()
                     await session.refresh(auth_session)
-                    return JSONResponse(status_code=401, content={"detail": "auth: unsufficient sec level"}, headers={"X-Challenge": auth_session.challange})
-
-                result = await func(*args, request=request, **kwargs)
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="auth: insufficient sec level", headers={"X-Challenge": auth_session.challange})
+                
+                request.state.auth_key = auth_session.key
+                result = await func(*args, **kwargs)
 
                 auth_session.challange = generate_challenge()
                 await session.commit()
@@ -88,7 +109,7 @@ def verify(sec_lvl: int):
         return wrapper
     return decorator
 
-class EmployeePost(BaseModel):
+class NewEmployeePost(BaseModel):
     username: str
     password: str
     first_name: str
@@ -96,7 +117,7 @@ class EmployeePost(BaseModel):
     title: Optional[str]
     salutation: str
 @router.post("/user", response_model=Employee)
-async def create_user(user_data: EmployeePost, session: AsyncSession = Depends(get_session)):
+async def create_user(user_data: NewEmployeePost, session: AsyncSession = Depends(get_session)):
     try:
         context = SRPContext(user_data.username, user_data.password, prime=PRIME, generator=GEN)
         username, verifier, salt = context.get_user_data_triplet()
@@ -107,16 +128,19 @@ async def create_user(user_data: EmployeePost, session: AsyncSession = Depends(g
         await session.commit()
         await session.refresh(employee)
     except sqlalchemy.exc.IntegrityError as e:
-        raise HTTPException(409, detail="IntegrityError: username may already exist")
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="IntegrityError: username may already exist")
     return employee
 
 @router.get("/users", response_model=list[Employee])
 async def read_users(session: AsyncSession = Depends(get_session)):
     return (await session.execute(select(Employee))).scalars()
 
+class NewPwPost(BaseModel):
+    username: str
+    password: str
 @router.post("/set_pw")
-async def set_pw(user_data: EmployeePost, session: AsyncSession = Depends(get_session)):
-    employee = await session.get(Employee, user_data.username)
+async def set_pw(user_data: NewPwPost, session: AsyncSession = Depends(get_session)):
+    employee = (await session.execute(select(Employee).where(Employee.username == user_data.username))).scalar_one_or_none()
     if isinstance(employee, Employee):
         context = SRPContext(user_data.username, user_data.password, prime=PRIME, generator=GEN)
         _, verifier, salt = context.get_user_data_triplet()
@@ -129,7 +153,7 @@ async def set_pw(user_data: EmployeePost, session: AsyncSession = Depends(get_se
         await session.commit()
         return None
     else:
-        raise HTTPException(404, detail="username not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="username not found")
     
 
 class LoginRequest(BaseModel):
@@ -140,24 +164,56 @@ class LoginResponse(BaseModel):
     refresh_token: str
     username: str
 @router.post('/login', response_model=LoginResponse)
-def login(data: LoginRequest, session: Session = Depends(get_session)):
-    employee = session.exec(select(Employee).filter_by(username = data.username)).first()
+async def login(data: LoginRequest, session: AsyncSession = Depends(get_session)):
+    employee = (await session.execute(select(Employee).where(Employee.username == data.username))).scalar_one_or_none()
     if isinstance(employee, Employee):
         if employee.username == data.password:
             return LoginResponse(access_token="", refresh_token="", username=employee.username)
         else:
-            raise HTTPException(401)
-    raise HTTPException(404)
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED)
+    raise HTTPException(status.HTTP_404_NOT_FOUND)
 
+def verify_and_decrypt(json_payload: dict, key_hex: str) -> dict:
+    # === Schlüssel aus SRP-Key ableiten ===
+    key_bytes = bytes.fromhex(key_hex)
+    key_enc = hashlib.sha256(key_bytes + b'enc').digest()[:32]
+    key_mac = hashlib.sha256(key_bytes + b'mac').digest()[:32]
 
-@router.get('/secure')
+    # === Base64-Daten aus JSON extrahieren ===
+    iv = base64.b64decode(json_payload['iv'])
+    ciphertext = base64.b64decode(json_payload['ciphertext'])
+    mac_received = base64.b64decode(json_payload['mac'])
+
+    # === MAC prüfen ===
+    mac_calculated = hmac.new(key_mac, iv + ciphertext, hashlib.sha256).digest()
+    if not hmac.compare_digest(mac_received, mac_calculated):
+        raise ValueError("❌ Ungültige Signatur (HMAC)")
+
+    # === Entschlüsselung (AES-CBC) ===
+    cipher = Cipher(algorithms.AES(key_enc), modes.CBC(iv), backend=default_backend())
+    decryptor = cipher.decryptor()
+    padded_plaintext = decryptor.update(ciphertext) + decryptor.finalize()
+
+    # === Padding entfernen (PKCS7) ===
+    unpadder = padding.PKCS7(128).unpadder()
+    plaintext = unpadder.update(padded_plaintext) + unpadder.finalize()
+
+    return json.loads(plaintext.decode('utf-8'))
+
+@router.post('/secure')
 @verify(1)
 async def secure_test(request:Request):
+    #auth_key = request.state.auth_key
+    #print(verify_and_decrypt(await request.json(), auth_key)["users"])
     return JSONResponse(content={"details": "verified"})
 
 @router.get('/test')
-async def test(request:Request, session: AsyncSession = Depends(get_session)):
+async def get_data(request:Request, session: AsyncSession = Depends(get_session)):
     await emit("test called")
+    request.
+    #await session.delete((await session.get(Employee, 4)))
+    #session.add(StudentNote.get_version_class()(version_operation=versioning.Operation.INSERT, id=1, date_time=get_datetime_utc(), issuer_id=1, student_id=1, note="Notiz 1"))
+    #await session.commit()
     return JSONResponse(content={"details": "test"})
 
 # Temporärer Speicher für aktive SRP-Sessions

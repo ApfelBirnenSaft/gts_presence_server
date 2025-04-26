@@ -40,7 +40,7 @@ if __name__ == "__main__":
     protocol:Literal["h1", "h2", "h3"] = "h1"
     if protocol == "h1":
         import uvicorn
-        uvicorn.run("server:app", host="localhost", port=8000, reload=True)
+        uvicorn.run("server:app", host="localhost", port=8000, reload=True, log_level="info")
     else:
         import hypercorn
         import hypercorn.asyncio
