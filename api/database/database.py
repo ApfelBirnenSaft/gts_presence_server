@@ -3,7 +3,7 @@ from sqlalchemy import URL, event
 from sqlmodel import SQLModel, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.ext.asyncio import async_sessionmaker
-from typing import AsyncGenerator, Type, TypeVar
+from typing import AsyncGenerator
 from sqlalchemy.orm import Session as SASession
 
 from utils import dump_model_json
@@ -42,7 +42,7 @@ def before_flush(session:SASession, flush_context):#, instances):
                 version_operation=operation,
                 **data,
             )
-            v_old = session.execute(select(v_cls).where(v_cls.id == v_instance.id).order_by(v_cls.version_id.desc()).limit(1)).scalar_one_or_none() # type: ignore
+            v_old = session.execute(select(v_cls).where(getattr(v_cls, obj_cls.identifier_column()) == getattr(v_instance, obj_cls.identifier_column())).order_by(getattr(v_cls, "version_id").desc()).limit(1)).scalar_one_or_none()
             if v_old:
                 dump_old = v_old.model_dump(mode="json")
                 del(dump_old["version_date_time"])
