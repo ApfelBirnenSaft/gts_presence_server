@@ -2,8 +2,8 @@ from sqlmodel import Field
 from typing import Optional
 
 from api.database import VersionedDBModel
-
-from utils import DB_ID_NOT_SET_EXCEPTION
+from .activity import Activity
+from utils import DB_ID_NOT_SET_EXCEPTION, db_column_name
 
 class Employee(VersionedDBModel, table=True):
     __identifier_column__ = "id"
@@ -20,6 +20,16 @@ class Employee(VersionedDBModel, table=True):
     salt: str = Field(max_length=32, nullable=False)
     verifier: str = Field(max_length=512, nullable=False)
     sec_lvl: int = Field(nullable=False)
+
+    monday_homework_room_id: Optional[int] = Field(nullable=True, foreign_key=db_column_name(Activity.id))
+    tuesday_homework_room_id: Optional[int] = Field(nullable=True, foreign_key=db_column_name(Activity.id))
+    wednesday_homework_room_id: Optional[int] = Field(nullable=True, foreign_key=db_column_name(Activity.id))
+    thursday_homework_room_id: Optional[int] = Field(nullable=True, foreign_key=db_column_name(Activity.id))
+
+    monday_school_club_id: Optional[int] = Field(nullable=True, foreign_key=db_column_name(Activity.id))
+    tuesday_school_club_id: Optional[int] = Field(nullable=True, foreign_key=db_column_name(Activity.id))
+    wednesday_school_club_id: Optional[int] = Field(nullable=True, foreign_key=db_column_name(Activity.id))
+    thursday_school_club_id: Optional[int] = Field(nullable=True, foreign_key=db_column_name(Activity.id))
 
     @property
     def id_strict(self) -> int:
