@@ -1,16 +1,17 @@
-from sqlmodel import SQLModel, Field
+from sqlmodel import Field
 from typing import Optional
 import datetime, enum
 
 from .__init__ import db_column_name, Activity, Employee
 
-from api.database import versioning
+from api.database import DBModel, VersionedDBModel
 
 from utils import DB_ID_NOT_SET_EXCEPTION
 
-class Student(SQLModel, versioning.VersionedMixin, table=True):
+class Student(VersionedDBModel, table=True):
+    __identifier_column__ = "id"
+
     id: Optional[int] = Field(default=None, primary_key=True, nullable=False)
-    last_change: datetime.datetime = Field(nullable=False)
     
     first_name: str = Field(nullable=False)
     last_name: str = Field(nullable=False)
@@ -33,7 +34,9 @@ class Student(SQLModel, versioning.VersionedMixin, table=True):
         else: raise DB_ID_NOT_SET_EXCEPTION
 
 
-class StudentNote(SQLModel, versioning.VersionedMixin, table=True):
+class StudentNote(VersionedDBModel, table=True):
+    __identifier_column__ = "id"
+
     id: Optional[int] = Field(default=None, primary_key=True, nullable=False)
     date_time: datetime.datetime = Field(nullable=False)
     issuer_id: int = Field(nullable=False, foreign_key=db_column_name(Employee.id))
@@ -45,7 +48,9 @@ class StudentNote(SQLModel, versioning.VersionedMixin, table=True):
         if isinstance(self.id, int): return self.id
         else: raise DB_ID_NOT_SET_EXCEPTION
 
-class StudentAbsentIrregular(SQLModel, versioning.VersionedMixin, table=True):
+class StudentAbsentIrregular(VersionedDBModel, table=True):
+    __identifier_column__ = "id"
+
     id: Optional[int] = Field(default=None, primary_key=True, nullable=False)
     created_at: datetime.datetime = Field(nullable=False)
     created_by_id: int = Field(nullable=False, foreign_key=db_column_name(Employee.id))
@@ -58,7 +63,9 @@ class StudentAbsentIrregular(SQLModel, versioning.VersionedMixin, table=True):
         if isinstance(self.id, int): return self.id
         else: raise DB_ID_NOT_SET_EXCEPTION
 
-class StudentAbsentRegular(SQLModel, versioning.VersionedMixin, table=True):
+class StudentAbsentRegular(VersionedDBModel, table=True):
+    __identifier_column__ = "id"
+    
     id: Optional[int] = Field(default=None, primary_key=True, nullable=False)
     created_at: datetime.datetime = Field(nullable=False)
     created_by_id: Optional[int] = Field(nullable=True, foreign_key=db_column_name(Employee.id))
@@ -95,7 +102,7 @@ class PresenceState(enum.Enum):
     def __str__(self):
         return self.value
 
-class StudentActivityPresence(SQLModel, table=True):
+class StudentActivityPresence(DBModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True, nullable=False)
     date_time: datetime.datetime = Field(nullable=False)
     issuer_id: int = Field(nullable=False, foreign_key=db_column_name(Employee.id))
@@ -108,7 +115,7 @@ class StudentActivityPresence(SQLModel, table=True):
         if isinstance(self.id, int): return self.id
         else: raise DB_ID_NOT_SET_EXCEPTION
 
-class StudentHomeworkExtension(SQLModel, table=True):
+class StudentHomeworkExtension(DBModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True, nullable=False)
     date_time: datetime.datetime = Field(nullable=False)
     issuer_id: int = Field(nullable=False, foreign_key=db_column_name(Employee.id))

@@ -4,8 +4,8 @@ import os
 import random
 import secrets
 import time
-from typing import Callable, cast, Optional
-from fastapi import APIRouter, HTTPException, Depends, Request, Response, status
+from typing import Callable, Dict, cast, Optional
+from fastapi import APIRouter, HTTPException, Depends, Request, Response, status, Query
 from fastapi.responses import JSONResponse
 import sqlalchemy
 from sqlmodel import Session, select
@@ -21,9 +21,8 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.backends import default_backend
 
-from ..models import *
-from ..database import get_session, engine, async_session, versioning
-from ..models.session import AuthSession
+from api.database import get_session, async_session, versioning
+from api.models import *
 from utils import get_datetime_utc
 
 from .websocket import router as ws_router, emit, start_up as ws_startup, JWT_SECRET_KEY, JWT_ALG
@@ -208,13 +207,24 @@ async def secure_test(request:Request):
     return JSONResponse(content={"details": "verified"})
 
 @router.get('/test')
-async def get_data(request:Request, session: AsyncSession = Depends(get_session)):
+async def get_data(request:Request, version_ids_json: str = Query(), session: AsyncSession = Depends(get_session)):
     await emit("test called")
-    request.
+    version_ids: Dict[str, int] = json.loads(version_ids_json)
     #await session.delete((await session.get(Employee, 4)))
     #session.add(StudentNote.get_version_class()(version_operation=versioning.Operation.INSERT, id=1, date_time=get_datetime_utc(), issuer_id=1, student_id=1, note="Notiz 1"))
     #await session.commit()
-    return JSONResponse(content={"details": "test"})
+    data = {}
+    classes: dict[str, type[DBModel]] = {}
+    versioned_classes: dict[str, type[VersionedDBModel]] = {"employee": Employee, "activity": Activity}
+    for cls_str, version_id in version_ids.items():
+        if cls_str in classes:
+            cls = classes[cls_str]
+        elif cls_str in versioned_classes:
+            versioned_cls = versioned_classes[cls_str]
+            data[cls_str] = versioned_cls.get_changes(session, version_id, None)
+        else:
+            raise HTTPException(404, detail=f"tried to get non-existend object \"{cls_str}\"")
+    return JSONResponse(content=data)
 
 # Temporärer Speicher für aktive SRP-Sessions
 def generate_challenge(length: int = 16) -> str:

@@ -1,13 +1,13 @@
-from sqlmodel import SQLModel, Field
+from sqlmodel import Field
 from typing import Optional
 import datetime, enum
 
-from api.database import versioning
+from api.database import VersionedDBModel
 
 from utils import DB_ID_NOT_SET_EXCEPTION
 
 class ActivityType(enum.Enum):
-    HomeworkRoom = "homwqork_room"
+    HomeworkRoom = "homework_room"
     SchoolClub = "school_club"
 
     @staticmethod
@@ -20,19 +20,20 @@ class ActivityType(enum.Enum):
     def __str__(self):
         return self.value
 
-class Activity(SQLModel, versioning.VersionedMixin, table=True):    
+class Activity(VersionedDBModel, table=True):  
+    __identifier_column__ = "id"
+      
     id: Optional[int] = Field(default=None, primary_key=True, nullable=False)
-    last_change: datetime.datetime = Field(nullable=False)
 
     activity_type: ActivityType = Field(nullable=False)
     
     short: str = Field(nullable=False, unique=True)
     title: str = Field(nullable=False)
     
-    room_monday: str = Field(nullable=True)
-    room_tuesday: str = Field(nullable=True)
-    room_wednesday: str = Field(nullable=True)
-    room_thursday: str = Field(nullable=True)
+    room_monday: Optional[str] = Field(nullable=True)
+    room_tuesday: Optional[str]  = Field(nullable=True)
+    room_wednesday: Optional[str]  = Field(nullable=True)
+    room_thursday: Optional[str]  = Field(nullable=True)
 
     @property
     def id_strict(self) -> int:

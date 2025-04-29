@@ -1,6 +1,8 @@
 import datetime
 import re, string
 
+from api.database.base_model import DBModel
+
 def get_datetime_utc() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)
 
@@ -14,3 +16,12 @@ def camel_to_snake(s: str) -> str:
     return result
 
 DB_ID_NOT_SET_EXCEPTION = ValueError("id is not set.")
+
+def db_column_name(c):
+    return f"{c.parent.class_.__tablename__}.{c.name}"
+
+def dump_model_json(model: DBModel) -> dict:
+    data = model.model_dump(mode="json")
+    for remove_field in getattr(model, "__export_exclude_fields__", []):
+        del(data[remove_field])
+    return data

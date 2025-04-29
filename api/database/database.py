@@ -1,53 +1,61 @@
-import json
-import logging
+import inspect
 from sqlalchemy import URL, event
-from sqlmodel import SQLModel, main
+from sqlmodel import SQLModel, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.ext.asyncio import async_sessionmaker
-from typing import AsyncGenerator, Type
+from typing import AsyncGenerator, Type, TypeVar
 from sqlalchemy.orm import Session as SASession
 
+from utils import dump_model_json
 from . import versioning
-import utils
-
-setattr(SQLModel, 'registry', main.default_registry)
+from .base_model import DBModel
 
 database_url = URL.create("mysql+aiomysql", "gtsv2", "k4xB7wP8zrEwfapM", "localhost", 3306, "gtsv2", {"charset": "utf8mb4"})
 
-engine: AsyncEngine = create_async_engine(database_url, echo=False, pool_pre_ping=True)
+async_engine: AsyncEngine = create_async_engine(database_url, echo=False, pool_pre_ping=True)
 
-async_session = async_sessionmaker(engine, expire_on_commit=False)
+async_session = async_sessionmaker(async_engine, expire_on_commit=False)
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     async with async_session() as session:
         yield session
 
-async def create_db_and_tables():
-    import api.models as models
+async def create_all_tables():
+    from api import models
+    for _, cls in inspect.getmembers(models, inspect.isclass):
+        if issubclass(cls, versioning.VersionedDBModel) and cls is not versioning.VersionedDBModel:
+            cls.init_version_model()
 
-    versioning.create_all_version_models(models)
 
-    async with engine.begin() as conn:
+    async with async_engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
-    
-    print(models.employee)
-
 
 @event.listens_for(SASession, "after_flush")
 def before_flush(session:SASession, flush_context):#, instances):
     print("After flush triggered")
-    def make_version(obj, operation:versioning.Operation):
-        if issubclass(type(obj), versioning.VersionedMixin):
-            v_cls: Type[versioning.VersionModelMixin] = obj.get_version_class()
-            data: dict = obj.model_dump()
-            exclude_fields = getattr(obj, "__version_exclude_fields__", [])
-            for field in exclude_fields:
-                data.pop(field, None)
-            v_cls = obj.get_version_class()
+    def make_version(obj: DBModel, operation:versioning.Operation):
+        obj_cls = type(obj)
+        if issubclass(obj_cls, versioning.VersionedDBModel):
+            v_cls = obj_cls.version_model()
+            data: dict = dump_model_json(obj)
             v_instance = v_cls(
                 version_operation=operation,
                 **data,
             )
+            v_old = session.execute(select(v_cls).where(v_cls.id == v_instance.id).order_by(v_cls.version_id.desc()).limit(1)).scalar_one_or_none() # type: ignore
+            if v_old:
+                dump_old = v_old.model_dump(mode="json")
+                del(dump_old["version_date_time"])
+                del(dump_old["version_id"])
+                del(dump_old["version_operation"])
+                dump = v_instance.model_dump(mode="json")
+                del(dump["version_date_time"])
+                del(dump["version_id"])
+                del(dump["version_operation"])
+                print(dump_old)
+                print(dump)
+                if dump == dump_old:
+                    return
             session.add(v_instance)
     for obj in session.new:
         make_version(obj, versioning.Operation.INSERT)

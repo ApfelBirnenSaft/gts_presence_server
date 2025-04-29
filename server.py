@@ -10,11 +10,11 @@ from api.v1.main import router as api_v1_router, start_up as api_v1_startup
 from api.v2.main import router as api_v2_router, start_up as api_v2_startup
 import os
 
-from api.database import create_db_and_tables
+from api.database import create_all_tables
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await create_db_and_tables()
+    await create_all_tables()
     api_v1_startup()
     api_v2_startup()
     yield
