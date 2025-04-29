@@ -221,7 +221,7 @@ async def get_data(request:Request, version_ids_json: str = Query(), session: As
             cls = classes[cls_str]
         elif cls_str in versioned_classes:
             versioned_cls = versioned_classes[cls_str]
-            data[cls_str] = versioned_cls.get_changes(session, version_id, None)
+            data[cls_str] = await versioned_cls.get_changes(session, version_id, None)
         else:
             raise HTTPException(404, detail=f"tried to get non-existend object \"{cls_str}\"")
     return JSONResponse(content=data)

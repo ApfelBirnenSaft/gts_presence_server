@@ -1,7 +1,13 @@
 import datetime
-import re, string
+import re
+from sqlmodel import SQLModel
 
-from api.database.base_model import DBModel
+class DBModel(SQLModel):
+    @classmethod
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls.__export_exclude_fields__ = []
+        cls.__tablename__ = camel_to_snake(cls.__name__)
 
 def get_datetime_utc() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)

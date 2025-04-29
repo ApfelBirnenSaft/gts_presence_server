@@ -1,14 +1,12 @@
 from copy import copy
-from sqlmodel import Field, func, select
+from sqlmodel import Field, and_, func, select
 from typing import Optional, Type
 import datetime
 import enum
 from pydantic import create_model
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from utils import get_datetime_utc, camel_to_snake, DB_ID_NOT_SET_EXCEPTION, dump_model_json
-
-from .base_model import DBModel
+from utils import get_datetime_utc, camel_to_snake, DB_ID_NOT_SET_EXCEPTION, dump_model_json, DBModel
 
 class Operation(enum.Enum):
     UPDATE = "update"
@@ -49,7 +47,7 @@ class VersionedDBModel(DBModel):
         cls.__version_model__ = create_version_model(cls)
     
     @classmethod
-    async def get_changes(cls, session: AsyncSession, last_version_id: int, only_till: Optional[datetime.datetime]):
+    async def get_changes(cls, session: AsyncSession, last_version_id: int, only_till: Optional[datetime.date]) -> dict[str, str]:
         data = {}
         versioning_cls = cls.version_model()
         highest_version = (await session.execute(select(versioning_cls).order_by(getattr(versioning_cls.version_id, 'desc')()).limit(1))).scalar_one_or_none()
@@ -59,11 +57,19 @@ class VersionedDBModel(DBModel):
             data.setdefault("deleted", [])
             data.setdefault("changed", [])
             return data
+        
+        conditions = [
+            getattr(versioning_cls, "version_id") > last_version_id
+        ]
+        if only_till is not None:
+            conditions.append(
+                func.date(getattr(versioning_cls, "datetime")) <= only_till
+            )
         subquery = (select(
                 getattr(versioning_cls, cls.identifier_column()),
                 func.max(versioning_cls.version_id).label("max_id")
             )
-            .where(getattr(versioning_cls.version_id, "version_id") > last_version_id)
+            .where(and_(*conditions))
             .group_by(getattr(versioning_cls, cls.identifier_column()))
             .order_by(getattr(versioning_cls, "version_id"))
             .subquery()

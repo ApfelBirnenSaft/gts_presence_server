@@ -6,9 +6,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from typing import AsyncGenerator
 from sqlalchemy.orm import Session as SASession
 
-from utils import dump_model_json
+from utils import dump_model_json, DBModel
 from . import versioning
-from .base_model import DBModel
 
 database_url = URL.create("mysql+aiomysql", "gtsv2", "k4xB7wP8zrEwfapM", "localhost", 3306, "gtsv2", {"charset": "utf8mb4"})
 
@@ -22,10 +21,9 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 
 async def create_all_tables():
     from api import models
-    for _, cls in inspect.getmembers(models, inspect.isclass):
+    for name, cls in inspect.getmembers(models, inspect.isclass):
         if issubclass(cls, versioning.VersionedDBModel) and cls is not versioning.VersionedDBModel:
             cls.init_version_model()
-
 
     async with async_engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
