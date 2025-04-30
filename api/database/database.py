@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from typing import AsyncGenerator
 from sqlalchemy.orm import Session as SASession
 
-from utils import dump_model_json, DBModel
+from utils import dump_model_json, BaseDBModelWithId
 from . import versioning
 
 database_url = URL.create("mysql+aiomysql", "gtsv2", "k4xB7wP8zrEwfapM", "localhost", 3306, "gtsv2", {"charset": "utf8mb4"})
@@ -31,7 +31,7 @@ async def create_all_tables():
 @event.listens_for(SASession, "after_flush")
 def before_flush(session:SASession, flush_context):#, instances):
     print("After flush triggered")
-    def make_version(obj: DBModel, operation:versioning.Operation):
+    def make_version(obj: BaseDBModelWithId, operation:versioning.Operation):
         obj_cls = type(obj)
         if issubclass(obj_cls, versioning.VersionedDBModel):
             v_cls = obj_cls.version_model()
@@ -40,7 +40,7 @@ def before_flush(session:SASession, flush_context):#, instances):
                 version_operation=operation,
                 **data,
             )
-            v_old = session.execute(select(v_cls).where(getattr(v_cls, obj_cls.identifier_column()) == getattr(v_instance, obj_cls.identifier_column())).order_by(getattr(v_cls, "version_id").desc()).limit(1)).scalar_one_or_none()
+            v_old = session.execute(select(v_cls).where(v_cls.id == v_instance.id).order_by(getattr(v_cls, "version_id").desc()).limit(1)).scalar_one_or_none()
             if v_old:
                 dump_old = v_old.model_dump(mode="json")
                 del(dump_old["version_date_time"])

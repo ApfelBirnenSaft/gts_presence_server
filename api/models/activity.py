@@ -1,10 +1,8 @@
 from sqlmodel import Field
 from typing import Optional
-import datetime, enum
+import enum
 
 from api.database import VersionedDBModel
-
-from utils import DB_ID_NOT_SET_EXCEPTION
 
 class ActivityType(enum.Enum):
     HomeworkRoom = "homework_room"
@@ -21,10 +19,6 @@ class ActivityType(enum.Enum):
         return self.value
 
 class Activity(VersionedDBModel, table=True):  
-    __identifier_column__ = "id"
-      
-    id: Optional[int] = Field(default=None, primary_key=True, nullable=False)
-
     activity_type: ActivityType = Field(nullable=False)
     
     short: str = Field(nullable=False, unique=True)
@@ -34,8 +28,3 @@ class Activity(VersionedDBModel, table=True):
     room_tuesday: Optional[str]  = Field(nullable=True)
     room_wednesday: Optional[str]  = Field(nullable=True)
     room_thursday: Optional[str]  = Field(nullable=True)
-
-    @property
-    def id_strict(self) -> int:
-        if isinstance(self.id, int): return self.id
-        else: raise DB_ID_NOT_SET_EXCEPTION

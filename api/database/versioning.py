@@ -6,14 +6,14 @@ import enum
 from pydantic import create_model
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from utils import get_datetime_utc, camel_to_snake, DB_ID_NOT_SET_EXCEPTION, dump_model_json, DBModel
+from utils import get_datetime_utc, camel_to_snake, DB_ID_NOT_SET_EXCEPTION, dump_model_json, BaseDBModelWithId
 
 class Operation(enum.Enum):
     UPDATE = "update"
     DELETE = "delete"
     INSERT = "insert"
 
-class VersionDBModel(DBModel):
+class VersionDBModel(BaseDBModelWithId):
     version_id: Optional[int] = Field(primary_key=True, nullable=False, default=None)
     version_operation: Operation
     version_date_time: datetime.datetime = Field(default_factory=get_datetime_utc)
@@ -23,18 +23,11 @@ class VersionDBModel(DBModel):
         if isinstance(self.version_id, int): return self.version_id
         else: raise DB_ID_NOT_SET_EXCEPTION
 
-class VersionedDBModel(DBModel):
+class VersionedDBModel(BaseDBModelWithId):
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         if not hasattr(cls, "__version_exclude_fields__"):
             cls.__version_exclude_fields__: list[str] = []
-    
-    @classmethod
-    def identifier_column(cls) -> str:
-        try:
-            return getattr(cls, "__identifier_column__")
-        except AttributeError:
-            raise AttributeError(f"Class {cls.__name__} does not have an '__identifier_column__' attribute.")
     
     @classmethod
     def version_model(cls) -> Type[VersionDBModel]:
@@ -66,11 +59,11 @@ class VersionedDBModel(DBModel):
                 func.date(getattr(versioning_cls, "datetime")) <= only_till
             )
         subquery = (select(
-                getattr(versioning_cls, cls.identifier_column()),
+                versioning_cls.id,
                 func.max(versioning_cls.version_id).label("max_id")
             )
             .where(and_(*conditions))
-            .group_by(getattr(versioning_cls, cls.identifier_column()))
+            .group_by(getattr(versioning_cls, "id"))
             .order_by(getattr(versioning_cls, "version_id"))
             .subquery()
         )
@@ -80,13 +73,12 @@ class VersionedDBModel(DBModel):
         )
         versions = (await session.execute(query)).scalars()
         for version in versions:
-            identifier = getattr(version, cls.identifier_column())
             data.setdefault("version", {})["id"] = version.version_id_strict
             data["version"]["date_time"] = version.version_date_time.isoformat()
             if version.version_operation == Operation.DELETE:
-                data.setdefault("deleted", []).append(identifier)
+                data.setdefault("deleted", []).append(version.id)
             else:
-                data.setdefault("changed", []).append(dump_model_json((await session.get_one(cls, identifier))))
+                data.setdefault("changed", []).append(dump_model_json((await session.get_one(cls, version.id))))
         return data
 
 def create_version_model(model_cls: Type[VersionedDBModel]) -> Type[VersionDBModel]:

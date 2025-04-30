@@ -4,15 +4,9 @@ import datetime, enum
 
 from .__init__ import db_column_name, Activity, Employee
 
-from api.database import DBModel, VersionedDBModel
-
-from utils import DB_ID_NOT_SET_EXCEPTION
+from api.database import VersionedDBModel, AppendOnlyDBModel
 
 class Student(VersionedDBModel, table=True):
-    __identifier_column__ = "id"
-
-    id: Optional[int] = Field(default=None, primary_key=True, nullable=False)
-    
     first_name: str = Field(nullable=False)
     last_name: str = Field(nullable=False)
     grade: int = Field(nullable=False)
@@ -28,45 +22,20 @@ class Student(VersionedDBModel, table=True):
     wednesday_school_club_id: Optional[int] = Field(nullable=True, foreign_key=db_column_name(Activity.id))
     thursday_school_club_id: Optional[int] = Field(nullable=True, foreign_key=db_column_name(Activity.id))
 
-    @property
-    def id_strict(self) -> int:
-        if isinstance(self.id, int): return self.id
-        else: raise DB_ID_NOT_SET_EXCEPTION
-
-
 class StudentNote(VersionedDBModel, table=True):
-    __identifier_column__ = "id"
-
-    id: Optional[int] = Field(default=None, primary_key=True, nullable=False)
     date_time: datetime.datetime = Field(nullable=False)
     issuer_id: int = Field(nullable=False, foreign_key=db_column_name(Employee.id))
     student_id: int = Field(nullable=False, foreign_key=db_column_name(Student.id))
     note: str = Field(nullable=False)
 
-    @property
-    def id_strict(self) -> int:
-        if isinstance(self.id, int): return self.id
-        else: raise DB_ID_NOT_SET_EXCEPTION
-
 class StudentAbsentIrregular(VersionedDBModel, table=True):
-    __identifier_column__ = "id"
-
-    id: Optional[int] = Field(default=None, primary_key=True, nullable=False)
     created_at: datetime.datetime = Field(nullable=False)
     created_by_id: int = Field(nullable=False, foreign_key=db_column_name(Employee.id))
     student_id: int = Field(nullable=False, foreign_key=db_column_name(Student.id))
     start_datetime: datetime.datetime = Field(nullable=False)
     end_datetime: datetime.datetime = Field(nullable=False)
 
-    @property
-    def id_strict(self) -> int:
-        if isinstance(self.id, int): return self.id
-        else: raise DB_ID_NOT_SET_EXCEPTION
-
 class StudentAbsentRegular(VersionedDBModel, table=True):
-    __identifier_column__ = "id"
-    
-    id: Optional[int] = Field(default=None, primary_key=True, nullable=False)
     created_at: datetime.datetime = Field(nullable=False)
     created_by_id: Optional[int] = Field(nullable=True, foreign_key=db_column_name(Employee.id))
 
@@ -80,11 +49,6 @@ class StudentAbsentRegular(VersionedDBModel, table=True):
     tuesday: bool = Field(nullable=False)
     wednesday: bool = Field(nullable=False)
     thursday: bool = Field(nullable=False)
-
-    @property
-    def id_strict(self) -> int:
-        if isinstance(self.id, int): return self.id
-        else: raise DB_ID_NOT_SET_EXCEPTION
 
 class PresenceState(enum.Enum):
     Present = "present"
@@ -102,28 +66,16 @@ class PresenceState(enum.Enum):
     def __str__(self):
         return self.value
 
-class StudentActivityPresence(DBModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True, nullable=False)
+class StudentActivityPresence(AppendOnlyDBModel, table=True):
     date_time: datetime.datetime = Field(nullable=False)
     issuer_id: int = Field(nullable=False, foreign_key=db_column_name(Employee.id))
     student_id: int = Field(nullable=False, foreign_key=db_column_name(Student.id))
     from_activity_id: Optional[int] = Field(nullable=True, foreign_key=db_column_name(Activity.id))
     presence_state: PresenceState = Field(nullable=False)
 
-    @property
-    def id_strict(self) -> int:
-        if isinstance(self.id, int): return self.id
-        else: raise DB_ID_NOT_SET_EXCEPTION
-
-class StudentHomeworkExtension(DBModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True, nullable=False)
+class StudentHomeworkExtension(AppendOnlyDBModel, table=True):
     date_time: datetime.datetime = Field(nullable=False)
     issuer_id: int = Field(nullable=False, foreign_key=db_column_name(Employee.id))
     student_id: int = Field(nullable=False, foreign_key=db_column_name(Student.id))
     from_activity_id: Optional[int] = Field(nullable=True, foreign_key=db_column_name(Activity.id))
     extension: bool = Field(nullable=False)
-
-    @property
-    def id_strict(self) -> int:
-        if isinstance(self.id, int): return self.id
-        else: raise DB_ID_NOT_SET_EXCEPTION

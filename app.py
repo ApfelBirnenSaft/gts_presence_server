@@ -11,7 +11,7 @@ import datetime
 from sqlalchemy.event import listens_for
 from sqlalchemy import and_, or_
 
-from models import *
+from models_old import *
 import Secrets
 
 app = Flask(__name__)

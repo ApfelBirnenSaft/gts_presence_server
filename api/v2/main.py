@@ -21,7 +21,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.backends import default_backend
 
-from api.database import get_session, async_session, versioning
+from api.database import get_session, async_session, BaseDBModelWithId
 from api.models import *
 from utils import get_datetime_utc
 
@@ -122,7 +122,7 @@ async def create_user(user_data: NewEmployeePost, session: AsyncSession = Depend
         username, verifier, salt = context.get_user_data_triplet()
         if isinstance(verifier, bytes): verifier = verifier.decode()
         if isinstance(salt, bytes): salt = salt.decode()
-        employee = Employee(username=username, salt=cast(str, salt), verifier=cast(str, verifier), sec_lvl=1, first_name=user_data.first_name, last_name=user_data.last_name, title=user_data.title, salutation=user_data.salutation)
+        employee = Employee(username=username, salt=cast(str, salt), verifier=cast(str, verifier), sec_lvl=1, first_name=user_data.first_name, last_name=user_data.last_name, title=user_data.title, salutation=user_data.salutation, monday_homework_room_id=None, tuesday_homework_room_id=None, wednesday_homework_room_id=None, thursday_homework_room_id=None, monday_school_club_id=None, tuesday_school_club_id=None, wednesday_school_club_id=None, thursday_school_club_id=None)
         session.add(employee)
         await session.commit()
         await session.refresh(employee)
@@ -135,13 +135,15 @@ async def read_users(session: AsyncSession = Depends(get_session)):
     return (await session.execute(select(Employee))).scalars()
 
 class NewPwPost(BaseModel):
-    username: str
-    password: str
+    user_id: int
+    password: str # TODO: calculate verifier and salt  by client
+    #verifier: str
+    #salt: str
 @router.post("/set_pw")
-async def set_pw(user_data: NewPwPost, session: AsyncSession = Depends(get_session)):
-    employee = (await session.execute(select(Employee).where(Employee.username == user_data.username))).scalar_one_or_none()
+async def set_pw(data: NewPwPost, session: AsyncSession = Depends(get_session)):
+    employee = (await session.get(Employee, data.user_id))
     if isinstance(employee, Employee):
-        context = SRPContext(user_data.username, user_data.password, prime=PRIME, generator=GEN)
+        context = SRPContext(employee.username, data.password, prime=PRIME, generator=GEN)
         _, verifier, salt = context.get_user_data_triplet()
         if isinstance(verifier, bytes): verifier = verifier.decode()
         if isinstance(salt, bytes): salt = salt.decode()
@@ -214,7 +216,7 @@ async def get_data(request:Request, version_ids_json: str = Query(), session: As
     #session.add(StudentNote.get_version_class()(version_operation=versioning.Operation.INSERT, id=1, date_time=get_datetime_utc(), issuer_id=1, student_id=1, note="Notiz 1"))
     #await session.commit()
     data = {}
-    classes: dict[str, type[DBModel]] = {}
+    classes: dict[str, type[BaseDBModelWithId]] = {}
     versioned_classes: dict[str, type[VersionedDBModel]] = {"employee": Employee, "activity": Activity}
     for cls_str, version_id in version_ids.items():
         if cls_str in classes:
@@ -223,7 +225,7 @@ async def get_data(request:Request, version_ids_json: str = Query(), session: As
             versioned_cls = versioned_classes[cls_str]
             data[cls_str] = await versioned_cls.get_changes(session, version_id, None)
         else:
-            raise HTTPException(404, detail=f"tried to get non-existend object \"{cls_str}\"")
+            raise HTTPException(404, detail=f"tried to get non-existend class '{cls_str}'")
     return JSONResponse(content=data)
 
 # Temporärer Speicher für aktive SRP-Sessions

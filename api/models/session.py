@@ -1,10 +1,10 @@
 from sqlmodel import Field
 
-from api.database import DBModel
+from api.database import BaseDBModel
 from .employee import Employee
 from utils import db_column_name
         
-class AuthSession(DBModel, table=True):
+class AuthSession(BaseDBModel, table=True):
     id: str = Field(default=None, primary_key=True)
     challange: str
     key: str
