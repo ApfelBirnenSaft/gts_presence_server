@@ -1,17 +1,16 @@
 import inspect
-from sqlalchemy import URL, event
+from sqlalchemy import event
 from sqlmodel import SQLModel, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from typing import AsyncGenerator
 from sqlalchemy.orm import Session as SASession
 
-from utils import dump_model_json, BaseDBModelWithId
+from utils import BaseDBModelWithId
 from . import versioning
+import Secrets
 
-database_url = URL.create("mysql+aiomysql", "gtsv2", "k4xB7wP8zrEwfapM", "localhost", 3306, "gtsv2", {"charset": "utf8mb4"})
-
-async_engine: AsyncEngine = create_async_engine(database_url, echo=False, pool_pre_ping=True)
+async_engine: AsyncEngine = create_async_engine(Secrets.database_uri, echo=False, pool_pre_ping=True)
 
 async_session = async_sessionmaker(async_engine, expire_on_commit=False)
 
@@ -30,12 +29,12 @@ async def create_all_tables():
 
 @event.listens_for(SASession, "after_flush")
 def before_flush(session:SASession, flush_context):#, instances):
-    print("After flush triggered")
+    #print("After flush triggered")
     def make_version(obj: BaseDBModelWithId, operation:versioning.Operation):
         obj_cls = type(obj)
         if issubclass(obj_cls, versioning.VersionedDBModel):
             v_cls = obj_cls.version_model()
-            data: dict = dump_model_json(obj)
+            data: dict = obj.model_dump(mode="python")
             v_instance = v_cls(
                 version_operation=operation,
                 **data,
@@ -50,8 +49,6 @@ def before_flush(session:SASession, flush_context):#, instances):
                 del(dump["version_date_time"])
                 del(dump["version_id"])
                 del(dump["version_operation"])
-                print(dump_old)
-                print(dump)
                 if dump == dump_old:
                     return
             session.add(v_instance)

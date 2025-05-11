@@ -15,7 +15,7 @@ from models_old import *
 import Secrets
 
 app = Flask(__name__)
-app.config["SQLALCHEMY_DATABASE_URI"] = Secrets.database_uri
+app.config["SQLALCHEMY_DATABASE_URI"] = Secrets.database_uri_v1
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = True
 app.secret_key = "shejevt34grtv3qgfvciktr38id1x85t4nqi3rnv45fgz476g5fwu3s45h37sqp3"
 cors = CORS(app)
@@ -474,4 +474,4 @@ with app.app_context():
 
 if __name__ == "__main__":
     create_token_deleting_event_if_not_exists()
-    socketio.run(app, host = Secrets.server_host_v1, port = Secrets.server_port, debug = True)#, ssl_context=('certificate/server.crt', 'certificate/private.key'))#, use_reloader=False)
+    socketio.run(app, host = Secrets.server_host_v1, port = Secrets.server_port_v1, debug = True)#, ssl_context=('certificate/server.crt', 'certificate/private.key'))#, use_reloader=False)

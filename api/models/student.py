@@ -2,7 +2,9 @@ from sqlmodel import Field
 from typing import Optional
 import datetime, enum
 
-from .__init__ import db_column_name, Activity, Employee
+from utils import db_column_name
+from .activity import Activity, ActivityType
+from .employee import Employee
 
 from api.database import VersionedDBModel, AppendOnlyDBModel
 
@@ -45,6 +47,7 @@ class StudentAbsentRegular(VersionedDBModel, table=True):
     student_id: int = Field(nullable=False, foreign_key=db_column_name(Student.id))
     start_time: datetime.time = Field(nullable=False)
     end_time: datetime.time = Field(nullable=False)
+    
     monday: bool = Field(nullable=False)
     tuesday: bool = Field(nullable=False)
     wednesday: bool = Field(nullable=False)
@@ -52,6 +55,7 @@ class StudentAbsentRegular(VersionedDBModel, table=True):
 
 class PresenceState(enum.Enum):
     Present = "present"
+    Extension = "extension"
     Absent = "absent"
     Missing = "missing"
 
@@ -59,6 +63,7 @@ class PresenceState(enum.Enum):
     def from_string(string):
         return {
             PresenceState.Present.value: PresenceState.Present,
+            PresenceState.Extension.value: PresenceState.Extension,
             PresenceState.Absent.value: PresenceState.Absent,
             PresenceState.Missing.value: PresenceState.Missing,
             }[string]
@@ -67,15 +72,8 @@ class PresenceState(enum.Enum):
         return self.value
 
 class StudentActivityPresence(AppendOnlyDBModel, table=True):
-    date_time: datetime.datetime = Field(nullable=False)
     issuer_id: int = Field(nullable=False, foreign_key=db_column_name(Employee.id))
     student_id: int = Field(nullable=False, foreign_key=db_column_name(Student.id))
-    from_activity_id: Optional[int] = Field(nullable=True, foreign_key=db_column_name(Activity.id))
+    at_activity_id: Optional[int] = Field(nullable=True, foreign_key=db_column_name(Activity.id))
+    for_type: ActivityType = Field(nullable=False)
     presence_state: PresenceState = Field(nullable=False)
-
-class StudentHomeworkExtension(AppendOnlyDBModel, table=True):
-    date_time: datetime.datetime = Field(nullable=False)
-    issuer_id: int = Field(nullable=False, foreign_key=db_column_name(Employee.id))
-    student_id: int = Field(nullable=False, foreign_key=db_column_name(Student.id))
-    from_activity_id: Optional[int] = Field(nullable=True, foreign_key=db_column_name(Activity.id))
-    extension: bool = Field(nullable=False)

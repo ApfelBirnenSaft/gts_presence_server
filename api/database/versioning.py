@@ -6,7 +6,7 @@ import enum
 from pydantic import create_model
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from utils import get_datetime_utc, camel_to_snake, DB_ID_NOT_SET_EXCEPTION, dump_model_json, BaseDBModelWithId
+from utils import get_datetime_utc, camel_to_snake, DB_ID_NOT_SET_EXCEPTION, BaseDBModelWithId
 
 class Operation(enum.Enum):
     UPDATE = "update"
@@ -23,12 +23,7 @@ class VersionDBModel(BaseDBModelWithId):
         if isinstance(self.version_id, int): return self.version_id
         else: raise DB_ID_NOT_SET_EXCEPTION
 
-class VersionedDBModel(BaseDBModelWithId):
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-        if not hasattr(cls, "__version_exclude_fields__"):
-            cls.__version_exclude_fields__: list[str] = []
-    
+class VersionedDBModel(BaseDBModelWithId):    
     @classmethod
     def version_model(cls) -> Type[VersionDBModel]:
         if getattr(cls, "__version_model__", None) == None:
@@ -38,6 +33,12 @@ class VersionedDBModel(BaseDBModelWithId):
     @classmethod
     def init_version_model(cls):
         cls.__version_model__ = create_version_model(cls)
+
+    @classmethod
+    async def get_current_version(cls, session: AsyncSession) -> Optional[int]:
+        versioning_cls = cls.version_model()
+        highest_version = (await session.execute(select(versioning_cls).order_by(getattr(versioning_cls.version_id, 'desc')()).limit(1))).scalar_one_or_none()
+        return highest_version.id_strict if highest_version != None else None
     
     @classmethod
     async def get_changes(cls, session: AsyncSession, last_version_id: int, only_till: Optional[datetime.date]) -> dict[str, str]:
@@ -56,7 +57,7 @@ class VersionedDBModel(BaseDBModelWithId):
         ]
         if only_till is not None:
             conditions.append(
-                func.date(getattr(versioning_cls, "datetime")) <= only_till
+                func.date(versioning_cls.version_date_time) <= only_till
             )
         subquery = (select(
                 versioning_cls.id,
@@ -78,13 +79,13 @@ class VersionedDBModel(BaseDBModelWithId):
             if version.version_operation == Operation.DELETE:
                 data.setdefault("deleted", []).append(version.id)
             else:
-                data.setdefault("changed", []).append(dump_model_json((await session.get_one(cls, version.id))))
+                data.setdefault("changed", []).append((await session.get_one(cls, version.id)).model_dump(mode="json"))
         return data
 
 def create_version_model(model_cls: Type[VersionedDBModel]) -> Type[VersionDBModel]:
     fields = {}
     for name, field in model_cls.model_fields.items():
-        if name in model_cls.__version_exclude_fields__:
+        if field.exclude:
             continue
         field = copy(field)
         field.unique = False
